@@ -1,0 +1,26 @@
+{
+  "id": "./",
+  "name": "Daily Wheel – Habit Tracker",
+  "short_name": "Daily Wheel",
+  "description": "Track 10 daily habits on a 365-day wheel. Green lines for done, red for missed. Keep star streaks with friends.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f766e",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["health", "lifestyle", "productivity"],
+  "prefer_related_applications": false,
+  "shortcuts": [
+    { "name": "Today's checklist", "short_name": "Today", "url": "./?tab=wheel" },
+    { "name": "Friends & streaks", "short_name": "Friends", "url": "./?tab=friends" }
+  ],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

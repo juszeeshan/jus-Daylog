@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Daily Wheel – Habit Tracker</title>
+  <meta name="description" content="Track 10 daily habits on a 365-day wheel and keep star streaks with friends.">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Daily Wheel">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <script>try{var t=localStorage.getItem('dw.theme');if(t&&t!=='auto')document.documentElement.dataset.theme=t}catch(e){}</script>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="themes.css">
+</head>
+<body>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <main id="auth" hidden></main>
+
+  <div id="app" hidden>
+    <header class="top">
+      <div class="brand"><img src="icon.svg" alt="" width="28" height="28"><b>Daily Wheel</b></div>
+      <span id="sync" class="sync"></span>
+    </header>
+    <div id="banner"></div>
+    <div id="view"></div>
+    <nav class="tabs" aria-label="Main">
+      <button data-tab="wheel"><i>◔</i>Wheel</button>
+      <button data-tab="month"><i>▦</i>Month</button>
+      <button data-tab="tasks"><i>✓</i>Tasks</button>
+      <button data-tab="friends"><i>👥</i>Friends</button>
+      <button data-tab="settings"><i>⚙</i>Settings</button>
+    </nav>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

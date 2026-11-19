@@ -1,0 +1,38 @@
+/* Shared by Daily Wheel and DayLog: themes + star/celebration/swatch components */
+:root{--bar:#0f766e;--on-accent:#fff}
+@media (prefers-color-scheme:dark){:root{--bar:#0b1220;--on-accent:#042f2e}}
+
+:root[data-theme=ocean]{--bg:#eef6fb;--card:#fff;--ink:#0c1a2b;--muted:#5b7083;--line:#d5e6f2;--accent:#0369a1;
+  --green:#16a34a;--red:#dc2626;--amber:#f59e0b;--faint:#c3d6e6;--bar:#0369a1;--on-accent:#fff}
+:root[data-theme=sunrise]{--bg:#fff6ee;--card:#fffdfb;--ink:#2a1608;--muted:#8a6a52;--line:#f3dccb;--accent:#ea580c;
+  --green:#16a34a;--red:#dc2626;--amber:#d97706;--faint:#e9d3c2;--bar:#ea580c;--on-accent:#fff}
+:root[data-theme=forest]{--bg:#eef5ee;--card:#fbfefb;--ink:#10230f;--muted:#587258;--line:#d6e7d6;--accent:#15803d;
+  --green:#16a34a;--red:#dc2626;--amber:#f59e0b;--faint:#c8dbc8;--bar:#15803d;--on-accent:#fff}
+:root[data-theme=lavender]{--bg:#f4f0fc;--card:#fff;--ink:#1d1233;--muted:#75639a;--line:#e3d9f6;--accent:#7c3aed;
+  --green:#16a34a;--red:#dc2626;--amber:#f59e0b;--faint:#d6c9ee;--bar:#7c3aed;--on-accent:#fff}
+:root[data-theme=midnight]{--bg:#0b1220;--card:#131c33;--ink:#e6edf8;--muted:#94a3b8;--line:#22304f;--accent:#38bdf8;
+  --green:#22c55e;--red:#f87171;--amber:#fbbf24;--faint:#334155;--bar:#0b1220;--on-accent:#04202e}
+:root[data-theme=amoled]{--bg:#000;--card:#0e0e0e;--ink:#f5f5f5;--muted:#9a9a9a;--line:#222;--accent:#2dd4bf;
+  --green:#22c55e;--red:#f87171;--amber:#fbbf24;--faint:#2f2f2f;--bar:#000;--on-accent:#04201c}
+:root[data-theme] .btn.primary{color:var(--on-accent)}
+:root[data-theme=midnight],:root[data-theme=amoled]{color-scheme:dark}
+
+/* stars */
+.stars{color:#f59e0b;letter-spacing:2px;white-space:nowrap}
+.stars .off{color:var(--faint)}
+
+/* theme swatches */
+.swatches{display:flex;flex-wrap:wrap;gap:12px;margin-top:6px}
+.sw{width:42px;height:42px;border-radius:50%;border:2px solid var(--line);cursor:pointer;padding:0}
+.sw[aria-pressed=true]{outline:3px solid var(--accent);outline-offset:2px}
+
+/* goal celebration */
+.celebrate{position:fixed;inset:0;z-index:40;display:grid;place-items:center;pointer-events:none}
+.celebrate .cbox{background:var(--card);color:var(--ink);border-radius:24px;padding:22px 30px;text-align:center;
+  box-shadow:0 12px 44px rgba(0,0,0,.3);animation:cpop .5s cubic-bezier(.2,1.6,.4,1) both}
+.celebrate .big{font-size:40px;letter-spacing:4px;color:#f59e0b;line-height:1.1}
+.celebrate h2{margin:6px 0 2px;font-size:20px}.celebrate p{margin:0;color:var(--muted)}
+.confetti i{position:fixed;top:-16px;width:8px;height:14px;border-radius:2px;animation:cfall 1.9s ease-in forwards}
+@keyframes cpop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes cfall{to{transform:translateY(108vh) rotate(600deg)}}
+@media (prefers-reduced-motion:reduce){.confetti{display:none}.celebrate .cbox{animation:none}}
