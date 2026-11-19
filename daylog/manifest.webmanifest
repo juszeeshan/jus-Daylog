@@ -1,0 +1,22 @@
+{
+  "id": "./",
+  "name": "DayLog",
+  "short_name": "DayLog",
+  "description": "Quick daily checklist with star streaks. Syncs with Daily Wheel.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#1e1b4b",
+  "theme_color": "#4f46e5",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["health", "lifestyle", "productivity"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

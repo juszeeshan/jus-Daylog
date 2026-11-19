@@ -1,0 +1,53 @@
+:root{--bg:#f5f6fb;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--accent:#4f46e5;
+  --green:#16a34a;--red:#dc2626;--amber:#f59e0b;--faint:#cbd5e1}
+@media (prefers-color-scheme:dark){:root{--bg:#0d1020;--card:#161a30;--ink:#e8ecf8;--muted:#98a2c0;--line:#262c4a;
+  --accent:#818cf8;--green:#22c55e;--red:#f87171;--amber:#fbbf24;--faint:#34406a}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);
+  padding:env(safe-area-inset-top) 0 calc(24px + env(safe-area-inset-bottom))}
+[hidden]{display:none!important}
+button{font:inherit;color:inherit;cursor:pointer}
+.wrap{max-width:520px;margin:0 auto;padding:14px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.top h1{margin:0;font-size:22px}.top span{font-size:12px;color:var(--muted)}
+.card{background:var(--card);border-radius:18px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(15,23,42,.08)}
+.hero{display:flex;align-items:center;gap:16px}
+.ring{width:96px;height:96px;flex:none}
+.ring circle{fill:none;stroke-width:10}
+.ring .bg{stroke:var(--line)}.ring .fg{stroke:var(--green);stroke-linecap:round;transform:rotate(-90deg);transform-origin:50% 50%;transition:stroke-dashoffset .3s}
+.ring text{font-size:24px;font-weight:800;fill:var(--ink);text-anchor:middle}
+.hero h2{margin:0;font-size:18px}.hero p{margin:2px 0 0;color:var(--muted);font-size:14px}
+.miss{color:var(--red);font-weight:600}
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.wd{border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:5px 3px 6px;display:flex;flex-direction:column;align-items:center;gap:3px}
+.wd small{font-size:10px;color:var(--muted)}.wd b{font-size:14px}
+.wd.sel{outline:2px solid var(--accent);outline-offset:1px}
+.bars{display:flex;gap:1px;height:20px;width:80%}
+.bars i{flex:1;border-radius:1px;background:var(--faint)}
+.bars i.g{background:var(--green)}.bars i.r{background:var(--red)}.bars i.p{background:var(--amber)}
+.bars i.f,.bars i.z{opacity:.3}
+ul{list-style:none;margin:0;padding:0}
+.t{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:0;background:none;padding:13px 4px;border-bottom:1px solid var(--line)}
+li:last-child .t{border-bottom:0}
+.box{width:26px;height:26px;border-radius:8px;border:2px solid var(--faint);flex:none;display:grid;place-items:center;font-size:16px;color:#fff}
+.t.on .box{background:var(--green);border-color:var(--green)}
+.t.on .tn{color:var(--muted);text-decoration:line-through}
+.t.miss .box{border-color:var(--red)}
+.t:disabled{opacity:.55}
+.note{color:var(--muted);font-size:13px;margin:6px 0 0}
+.btn{border:1px solid var(--line);background:var(--card);padding:11px 16px;border-radius:12px;font-weight:600}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn.wide{width:100%}
+.link{background:none;border:0;color:var(--accent);padding:8px;text-decoration:underline}
+.fld{display:block;margin:0 0 12px;font-size:13px;color:var(--muted)}
+.fld input{display:block;width:100%;margin-top:4px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);font-size:16px;color:var(--ink)}
+.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--bg);border-radius:12px;padding:4px;margin-bottom:14px}
+.seg button{border:0;background:none;padding:9px;border-radius:9px;font-weight:600;color:var(--muted)}
+.seg button.on{background:var(--card);color:var(--ink)}
+.err{color:var(--red);min-height:1.2em;font-size:13px}
+.auth{min-height:100vh;display:flex;align-items:center}
+.auth .card{width:100%;text-align:center}.auth form{text-align:left}
+.logo{width:64px;height:64px;border-radius:16px}
+#toast{position:fixed;left:50%;bottom:30px;transform:translate(-50%,20px);background:#0f172a;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;z-index:20}
+#toast.show{opacity:1;transform:translate(-50%,0)}
