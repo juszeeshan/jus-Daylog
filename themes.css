@@ -1,0 +1,9 @@
+/* Shared by Daily Wheel and DayLog. */
+:root { color-scheme: light dark; --bg:#f4f7fb; --surface:#fff; --surface2:#eaf0f7; --text:#172337; --muted:#68778b; --accent:#1769aa; --accent2:#e5f2ff; --border:#d8e1ec; --green:#159957; --red:#d84a4a; --amber:#d99a16; --grey:#c9d1dc; --shadow:0 8px 28px #13243a12; }
+:root[data-theme="ocean"] { --bg:#edf7fa;--surface:#fff;--surface2:#e0f1f5;--text:#12313d;--muted:#5e7b85;--accent:#087e8b;--accent2:#d9f2f3;--border:#c8e1e5; }
+:root[data-theme="sunrise"] { --bg:#fff5ee;--surface:#fff;--surface2:#ffeadc;--text:#422719;--muted:#8c6b5c;--accent:#d66a35;--accent2:#ffe4d4;--border:#f1d6c7; }
+:root[data-theme="forest"] { --bg:#eff6ef;--surface:#fff;--surface2:#e2eee1;--text:#1e3522;--muted:#667d69;--accent:#397747;--accent2:#e0f1e3;--border:#d0e2d1; }
+:root[data-theme="lavender"] { --bg:#f6f2fc;--surface:#fff;--surface2:#eee7fa;--text:#302442;--muted:#796b8d;--accent:#7954a5;--accent2:#eee4fa;--border:#ded2ee; }
+:root[data-theme="midnight"] { color-scheme:dark;--bg:#101827;--surface:#192437;--surface2:#24334b;--text:#edf3fc;--muted:#a2b1c6;--accent:#70b7ff;--accent2:#203b59;--border:#34445c;--green:#45c98a;--red:#ff7777;--amber:#f4c45b;--grey:#536176; }
+:root[data-theme="amoled"] { color-scheme:dark;--bg:#000;--surface:#090909;--surface2:#151515;--text:#f5f5f5;--muted:#aaa;--accent:#7ab8ff;--accent2:#142337;--border:#292929;--green:#42d392;--red:#ff6b6b;--amber:#f6c65b;--grey:#555; }
+@media(prefers-color-scheme:dark){:root[data-theme="auto"]{color-scheme:dark;--bg:#111a28;--surface:#1b2739;--surface2:#27354a;--text:#edf3fc;--muted:#a4b2c7;--accent:#79baff;--accent2:#233d59;--border:#394a62;--green:#45c98a;--red:#ff7777;--amber:#f4c45b;--grey:#56647a}}

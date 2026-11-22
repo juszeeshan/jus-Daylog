@@ -1,0 +1,53 @@
+{
+  "id": "./",
+  "name": "Jus Daylog",
+  "short_name": "Jus Daylog",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#1769aa",
+  "description": "Make every day count.",
+  "categories": [
+    "lifestyle",
+    "health",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Today",
+      "short_name": "Today",
+      "url": "./index.html"
+    },
+    {
+      "name": "Friends",
+      "short_name": "Friends",
+      "url": "./index.html?tab=friends"
+    }
+  ],
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "lang": "en",
+  "prefer_related_applications": false
+}
