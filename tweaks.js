@@ -10,11 +10,15 @@
 .auth.k-auth{display:flex;flex-direction:column}
 .k-auth .gbtn{margin:6px 0 2px}
 .k-demo{background:none;border:0;color:var(--muted);text-decoration:underline;font-size:13px;padding:6px;margin:14px auto 0;width:auto;cursor:pointer}
-.steps{margin:4px 0 12px;padding-left:20px}.steps li{margin:3px 0}`;
+.steps{margin:4px 0 12px;padding-left:20px}.steps li{margin:3px 0}
+.wheel .cell.k-sel .hit{stroke:var(--accent);stroke-opacity:.28}
+.wheel .hubdate{font-size:10px;font-weight:700;text-anchor:middle;fill:var(--muted)}
+.k-sum{margin:2px 0 8px;font-size:14px}.k-miss{color:var(--red);font-weight:700}.k-ok{color:var(--green);font-weight:700}
+.zoomctl .k-home{font-size:19px}`;
   const style = document.createElement('style'); style.textContent = CSS; document.head.appendChild(style);
   const $ = (s) => document.querySelector(s);
   const J = () => window.JusDaylog;
-  let picked = false, promptedFor = null;
+  let picked = false, pendingScroll = false, promptedFor = null;
   const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
 
   function layoutAuth(auth) {
@@ -44,8 +48,11 @@
     const dpIsToday = dp && /· Today/.test((dp.querySelector('b') || {}).textContent || '');
     if (wheelCard && top) {
       if (wheelCard.compareDocumentPosition(top) & FOLLOWING) { /* wheel already first */ } else top.parentNode.insertBefore(wheelCard, top);
+      dayFocus(root, dp, dpIsToday);
       if (dp && dpIsToday) dp.remove();                                           // today's list is already shown once
       else if (dp) wheelCard.parentNode.insertBefore(dp, wheelCard.nextSibling);   // a tapped past day sits right under the wheel
+      addHome(root);
+      if (pendingScroll) { pendingScroll = false; const t = dp && !dpIsToday ? dp : root.querySelector('.daily-task-card'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     }
     const note = root.querySelector('#leave-demo'), noteCard = note && note.closest('section.card');
     if (noteCard && wheelCard && noteCard.compareDocumentPosition(wheelCard) & FOLLOWING) root.appendChild(noteCard);   // demo notice goes below, wheel stays on top
@@ -55,6 +62,55 @@
       if (!picked && !root.querySelector('.k-hint')) { const h = document.createElement('p'); h.className = 'muted k-hint'; h.textContent = "Tap a day to see or change its tasks. Today's checklist is on the Wheel tab."; grid.parentNode.insertBefore(h, grid.nextSibling); }
       if (picked) { const h = root.querySelector('.k-hint'); if (h) h.remove(); }
     }
+  }
+
+  const LBL = { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' };
+  let labelMap = null, labelKey = '';
+  function dateOfPanel(root, dp) {                       // which day is the day panel showing? (match its heading to a wheel cell)
+    const label = ((dp.querySelector('b') || {}).textContent || '').replace(/ · Today$/, '');
+    const cells = [...root.querySelectorAll('.wheel .cell')]; if (!cells.length) return '';
+    const key = cells[0].dataset.pick + cells.length;
+    if (!labelMap || labelKey !== key) { labelMap = new Map(); labelKey = key; cells.forEach((c) => { const d = c.dataset.pick; labelMap.set(new Date(d + 'T12:00:00').toLocaleDateString(undefined, LBL), d); }); }
+    return labelMap.get(label) || '';
+  }
+  const todayISO = () => { const st = J() && J().state; return window.JusLogic.todayIn((st && st.profile.tz) || undefined); };
+
+  // The wheel follows the tapped day: highlighted spoke + centre shows that day's score; the list marks done vs missed.
+  function dayFocus(root, dp, dpIsToday) {
+    const st = J().state, n = st.tasks.length, T = todayISO();
+    const sel = dp && !dpIsToday ? dateOfPanel(root, dp) : '';
+    root.querySelectorAll('.wheel .cell.k-sel').forEach((c) => c.classList.remove('k-sel'));
+    const hub = root.querySelector('.wheel .hubnum');
+    if (hub && sel && sel !== T) {
+      const done = (st.logs[sel] || []).length, stars = window.JusLogic.starsOf(done, n);
+      hub.textContent = done + '/' + n;
+      const hs = root.querySelector('.wheel .hubstars'); if (hs) hs.textContent = '★'.repeat(stars) + '☆'.repeat(5 - stars);
+      let dl = root.querySelector('.wheel .hubdate');
+      if (!dl) { dl = document.createElementNS('http://www.w3.org/2000/svg', 'text'); dl.setAttribute('class', 'hubdate'); dl.setAttribute('x', hub.getAttribute('x')); dl.setAttribute('y', String(Number(hub.getAttribute('y')) - 26)); hub.parentNode.appendChild(dl); }
+      dl.textContent = new Date(sel + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+      const cell = root.querySelector('.wheel .cell[data-pick="' + sel + '"]'); if (cell) cell.classList.add('k-sel');
+    }
+    if (dp && !dpIsToday && !dp.querySelector('.k-sum') && dp.querySelector('.miss')) {        // a finished past day: show what was done and what failed
+      let ok = 0, bad = 0;
+      dp.querySelectorAll('.day-row').forEach((r) => { const m = r.lastElementChild, input = r.querySelector('input'); if (!m || !input) return; if (input.checked) ok++; else { bad++; m.textContent = '✗'; m.style.color = 'var(--red)'; m.style.fontWeight = '700'; } });
+      const p = document.createElement('p'); p.className = 'k-sum'; p.innerHTML = '<span class="k-ok">✓ ' + ok + ' done</span> · <span class="k-miss">✗ ' + bad + ' missed</span>';
+      const prog = dp.querySelector('.progress'); if (prog) prog.parentNode.insertBefore(p, prog.nextSibling);
+    }
+  }
+  function addHome(root) {
+    const ctl = root.querySelector('.zoomctl'); if (!ctl) return;
+    let h = ctl.querySelector('.k-home');
+    if (!h) { h = document.createElement('button'); h.className = 'k-home'; h.setAttribute('aria-label', 'Back to today'); h.title = 'Back to today'; h.textContent = '⌂'; ctl.appendChild(h); }
+    h.setAttribute('data-select', todayISO());         // app.js already handles data-select: jumps to that day
+  }
+  function goHome() {                                    // after app.js has selected today: reset zoom, right year, top of page
+    const z = document.querySelector('[data-zoom="0"]'); if (z) z.click();
+    for (let i = 0; i < 6; i++) {
+      const T = todayISO(), cells = [...document.querySelectorAll('.wheel .cell')];
+      if (cells.some((c) => c.dataset.pick === T)) break;
+      const nav = document.querySelector('[data-year="' + (T < (cells.length ? cells[0].dataset.pick : T) ? -1 : 1) + '"]'); if (!nav) break; nav.click();
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   const INSTALL = '<section class="card" id="k-install"><b>Install on your phone, like an app</b>'
@@ -82,6 +138,8 @@
   // Browsers only allow the notification prompt after a tap, so ask on the first tap once a signed-in user has reminders on.
   document.addEventListener('click', (e) => {
     const t = e.target.closest && e.target.closest('[data-select],[data-pick]'); if (t) picked = true;
+    if (e.target.closest && e.target.closest('[data-pick]')) pendingScroll = true;
+    if (e.target.closest && e.target.closest('.k-home')) { picked = false; setTimeout(goHome, 0); }
     if (e.target.closest && e.target.closest('[data-tab]')) picked = false;
     const j = J(); if (!j || !('Notification' in window) || Notification.permission !== 'default') return;
     const st = j.state; if (!st.token || st.token === 'demo' || !(st.profile.reminders || {}).enabled) return;
