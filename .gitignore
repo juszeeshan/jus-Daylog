@@ -1,0 +1,5 @@
+apps-script/Code.gs
+.DS_Store
+node_modules/
+playwright-report/
+test-results/

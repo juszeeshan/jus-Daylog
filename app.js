@@ -9,7 +9,6 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':
 
 const CFG = window.APP_CONFIG || {};
 const API = String(CFG.API_URL || '').trim();
-const DEMO = !API;
 const KEY = 'jus-daylog-v1';
 const EDIT_DAYS = 7;
 const THEMES = ['auto', 'ocean', 'sunrise', 'forest', 'lavender', 'midnight', 'amoled'];
@@ -18,6 +17,7 @@ const DEFAULT_NAMES = ['Exercise', '2-litre water', '6-hour sleep on time', 'Ski
   'Read 20 minutes', 'Healthy meals', 'No junk food', 'Journal', 'Plan tomorrow'];
 const defaultTasks = () => DEFAULT_NAMES.map((name, i) => ({ id: 't' + (i + 1), name }));
 const TABS = [['wheel', 'Wheel'], ['month', 'Month'], ['tasks', 'Tasks'], ['friends', 'Friends'], ['settings', 'Settings']];
+function isDemo() { return !API || state.token === 'demo'; }
 const IS_DAYLOG = location.pathname.includes('/daylog');
 const ROOT_URL = IS_DAYLOG ? '../' : './';
 
@@ -52,7 +52,7 @@ const starsFor = (d) => starsOf(doneOf(d), state.tasks.length);
 const editable = (d) => d <= today() && d >= addDays(today(), -(EDIT_DAYS - 1)) && d >= startDate();
 const myStreak = () => L.streak(state.logs, goal(), today());
 
-const ui = { tab: IS_DAYLOG ? 'daylog' : 'wheel', selected: today(), yearOffset: 0, authMode: 'login', resetStep: 0, resetId: '',
+const ui = { tab: IS_DAYLOG ? 'daylog' : 'wheel', selected: today(), yearOffset: 0, authMode: 'register', resetStep: 0, resetId: '',
   friends: null, matches: [], addPrefill: '', busy: false, deferredInstall: null };
 
 let toastT;
@@ -76,18 +76,18 @@ function applyTheme(t, fromUser) {
 
 /* ---------- network & sync ---------- */
 async function api(action, data) {
-  if (DEMO) return { ok: true, demo: true };
+  if (isDemo()) return { ok: true, demo: true };
   try {
     // Plain-text body keeps this a "simple" CORS request (Apps Script web apps do not answer preflights).
     const res = await fetch(API, { method: 'POST', body: JSON.stringify(Object.assign({ action, token: state.token, tz: state.profile.tz }, data || {})) });
     return await res.json();
-  } catch (e) { return { ok: false, error: 'Cannot reach the server. Check your internet.', code: 'net' }; }
+  } catch (e) { return { ok: false, error: navigator.onLine ? 'Cannot reach the server. Check that the Apps Script is deployed as a Web app with access set to "Anyone", and that the URL in config.js is correct.' : 'You are offline. Check your internet.', code: 'net' }; }
 }
 
 let syncing = false, syncTimer = null;
 function setStatus() {
   const el = $('#sync'); if (!el) return;
-  el.textContent = DEMO ? 'Demo mode · this device only' : !state.token ? '' : !navigator.onLine ? (state.dirty.length ? 'Offline · will sync' : 'Offline')
+  el.textContent = isDemo() ? 'Demo mode · this device only' : !state.token ? '' : !navigator.onLine ? (state.dirty.length ? 'Offline · will sync' : 'Offline')
     : syncing || state.dirty.length ? 'Saving…' : 'Synced ✓';
 }
 function queue(item) {
@@ -99,7 +99,7 @@ const settingsPayload = () => { const p = state.profile; return { name: p.name, 
   tz: p.tz, goalStars: p.goalStars, discoverable: p.discoverable, theme: p.theme, reminders: p.reminders }; };
 
 async function sync() {
-  if (DEMO || !state.token || syncing || !navigator.onLine) { setStatus(); return; }
+  if (isDemo() || !state.token || syncing || !navigator.onLine) { setStatus(); return; }
   syncing = true; setStatus();
   let retry = false;
   for (const item of [...state.dirty]) {
@@ -131,7 +131,7 @@ function applyServerState(st) {
   tCache.at = 0; persist();
 }
 async function refreshFromServer() {
-  if (DEMO || !state.token || !navigator.onLine) return;
+  if (isDemo() || !state.token || !navigator.onLine) return;
   const r = await api('getState');
   if (r.ok) { applyServerState(r); applyTheme(state.profile.theme, false); render(); }
   else if (r.code === 'auth') { state.token = ''; persist(); render(); }
@@ -245,9 +245,61 @@ function panel(d) {
     + '<div class="top" style="margin-top:12px"><button class="btn secondary small" data-shift="-1">← Previous</button><button class="btn secondary small" data-shift="1">Next →</button></div></section>';
 }
 
+/* ---------- wheel zoom (only the wheel zooms, never the page) ---------- */
+const zoom = { k: 1, x: 0, y: 0, moved: 0 };
+const zoomStyle = () => `transform:translate(${zoom.x.toFixed(1)}px,${zoom.y.toFixed(1)}px) scale(${zoom.k.toFixed(3)})`;
+function zoomApply() {
+  const w = $('#zoomwrap'), l = $('#zoomlayer'); if (!w || !l) return;
+  zoom.k = Math.min(6, Math.max(1, zoom.k));
+  const W = w.clientWidth, H = w.clientHeight;
+  zoom.x = Math.min(0, Math.max(W * (1 - zoom.k), zoom.x)); zoom.y = Math.min(0, Math.max(H * (1 - zoom.k), zoom.y));
+  if (zoom.k === 1) { zoom.x = 0; zoom.y = 0; }
+  l.style.transform = `translate(${zoom.x}px,${zoom.y}px) scale(${zoom.k})`;
+  w.classList.toggle('zoomed', zoom.k > 1);
+}
+function zoomAt(k2, cx, cy) {                       // keep the point (cx,cy) of the wrapper fixed while scaling
+  const k = zoom.k; k2 = Math.min(6, Math.max(1, k2));
+  zoom.x = cx - (cx - zoom.x) * (k2 / k); zoom.y = cy - (cy - zoom.y) * (k2 / k); zoom.k = k2; zoomApply();
+}
+(() => {
+  let g = null;                                      // current gesture
+  const pos = (t, w) => { const r = w.getBoundingClientRect(); return [t.clientX - r.left, t.clientY - r.top]; };
+  const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  document.addEventListener('touchstart', (e) => {
+    const w = e.target.closest && e.target.closest('#zoomwrap'); if (!w || e.target.closest('.zoomctl')) return;
+    if (e.touches.length === 2) { const [a, b] = e.touches, [x1, y1] = pos(a, w), [x2, y2] = pos(b, w); g = { mode: 'pinch', d: dist(a, b), k: zoom.k, cx: (x1 + x2) / 2, cy: (y1 + y2) / 2, x: zoom.x, y: zoom.y }; }
+    else if (e.touches.length === 1) { const [x, y] = pos(e.touches[0], w); g = { mode: 'pan', sx: x, sy: y, x: zoom.x, y: zoom.y, drag: false }; }
+  }, { passive: true });
+  document.addEventListener('touchmove', (e) => {
+    const w = $('#zoomwrap'); if (!g || !w) return;
+    if (g.mode === 'pinch' && e.touches.length === 2) {
+      e.preventDefault(); zoom.moved = Date.now();
+      const k2 = Math.min(6, Math.max(1, g.k * dist(e.touches[0], e.touches[1]) / g.d));
+      zoom.k = g.k; zoom.x = g.x; zoom.y = g.y; zoomAt(k2, g.cx, g.cy);
+    } else if (g.mode === 'pan' && e.touches.length === 1 && zoom.k > 1) {
+      const [x, y] = pos(e.touches[0], w);
+      if (Math.abs(x - g.sx) + Math.abs(y - g.sy) > 6) g.drag = true;
+      if (g.drag) { e.preventDefault(); zoom.moved = Date.now(); zoom.x = g.x + x - g.sx; zoom.y = g.y + y - g.sy; zoomApply(); }
+    }
+  }, { passive: false });
+  document.addEventListener('touchend', (e) => { if (e.touches.length === 0) g = null; else if (e.touches.length === 1) g = null; }, { passive: true });
+  // mouse: drag to pan, ctrl/⌘ + wheel (or trackpad pinch) to zoom, double-click to zoom in/out
+  let md = null;
+  document.addEventListener('mousedown', (e) => { const w = e.target.closest && e.target.closest('#zoomwrap'); if (w && zoom.k > 1 && !e.target.closest('.zoomctl')) md = { sx: e.clientX, sy: e.clientY, x: zoom.x, y: zoom.y }; });
+  document.addEventListener('mousemove', (e) => { if (!md) return; const dx = e.clientX - md.sx, dy = e.clientY - md.sy; if (Math.abs(dx) + Math.abs(dy) > 5) { zoom.moved = Date.now(); zoom.x = md.x + dx; zoom.y = md.y + dy; zoomApply(); } });
+  document.addEventListener('mouseup', () => { md = null; });
+  document.addEventListener('wheel', (e) => {
+    const w = e.target.closest && e.target.closest('#zoomwrap'); if (!w || !(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault(); const [x, y] = pos(e, w); zoomAt(zoom.k * Math.exp(-e.deltaY * 0.01), x, y);
+  }, { passive: false });
+  document.addEventListener('dblclick', (e) => { const w = e.target.closest && e.target.closest('#zoomwrap'); if (!w || e.target.closest('.zoomctl')) return; const [x, y] = pos(e, w); zoomAt(zoom.k > 1.2 ? 1 : 2.5, x, y); });
+  document.addEventListener('gesturestart', (e) => e.preventDefault());   // iOS Safari: no page-level pinch zoom
+  window.addEventListener('resize', zoomApply);
+})();
+
 function wheelView() {
   return `<div class="top"><h2>Annual planner</h2><div class="cyclenav"><button class="btn secondary small" data-year="-1" aria-label="Previous year">‹</button> <b>${esc(cycleLabel())}</b> <button class="btn secondary small" data-year="1" aria-label="Next year">›</button></div></div>`
-    + `<div class="dashboard-top">${todayCard()}${overviewCard()}</div><section class="card"><div class="wheel-wrap">${wheelSvg()}</div>${LEGEND}<p class="muted" style="text-align:center;font-size:12px;margin:6px 0 0">Each day is 10 lines (outermost = task 1). Tap a day to open it.</p></section>`
+    + `<div class="dashboard-top">${todayCard()}${overviewCard()}</div><section class="card"><div class="wheel-wrap" id="zoomwrap"><div class="zoomlayer" id="zoomlayer" style="${zoomStyle()}">${wheelSvg()}</div><div class="zoomctl"><button data-zoom="1" aria-label="Zoom in">+</button><button data-zoom="-1" aria-label="Zoom out">−</button><button data-zoom="0" aria-label="Reset zoom">⟲</button></div></div>${LEGEND}<p class="muted" style="text-align:center;font-size:12px;margin:6px 0 0">Each day is 10 lines (outermost = task 1). Tap a day to open it. Pinch or use + / − to zoom the wheel.</p></section>`
     + annualSummaries() + panel(ui.selected);
 }
 
@@ -273,7 +325,7 @@ function friendRow(f, mine) {
     + `<div class="fstat"><span title="Star streak">🔥 ${f.streak}</span>${f.duo !== undefined ? `<span title="Days you both hit your goals">🤝 ${f.duo}</span>` : ''}${mine ? '' : `<button class="btn secondary small" data-friend-remove="${esc(f.username)}" aria-label="Remove friend">×</button>`}</div>${weekRow(f.stars7)}</div>`;
 }
 function friendsView() {
-  if (DEMO) return '<h2>Friends & streaks</h2><section class="card"><p class="muted">Friends and shared streaks need the Google backend. Put your Apps Script URL in config.js to turn this on.</p></section>';
+  if (isDemo()) return '<h2>Friends & streaks</h2><section class="card"><p class="muted">Friends and shared streaks need the Google backend. Put your Apps Script URL in config.js to turn this on.</p></section>';
   const p = state.profile, F = ui.friends;
   let h = '<h2>Friends & streaks</h2>';
   if (!p.username) h += '<section class="card"><b>Pick your username</b><p class="muted">Friends find you by it. 3–20 letters, numbers or underscore.</p><form id="username-form" class="inline"><input name="username" maxlength="20" autocapitalize="none" autocomplete="off" placeholder="e.g. ravi_24" required><button class="btn">Save</button></form></section>';
@@ -292,7 +344,7 @@ function friendsView() {
   return h;
 }
 async function loadFriends() {
-  if (DEMO || !state.token) return;
+  if (isDemo() || !state.token) return;
   const r = await api('friends');
   if (r.ok) ui.friends = { friends: r.friends || [], incoming: r.incoming || [], outgoing: r.outgoing || [] };
   else { if (!ui.friends) ui.friends = { friends: [], incoming: [], outgoing: [] }; if (r.code === 'auth') { state.token = ''; persist(); render(); return; } toast(r.error); }
@@ -311,7 +363,7 @@ function settingsView() {
   const notif = 'Notification' in window ? Notification.permission : 'unsupported', devTz = deviceTz();
   return `<h2>Settings</h2><section class="card"><b>Theme</b><div class="swatches" style="margin-top:8px">${THEMES.map((t) => `<button class="swatch" data-theme="${t}" aria-pressed="${p.theme === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div></section>`
     + `<section class="card"><label class="field">Name<input id="p-name" maxlength="60" value="${esc(p.name)}"></label><label class="field">Email (for reminders)<input id="p-email" type="email" value="${esc(p.email || '')}" placeholder="you@example.com"></label>`
-    + (DEMO ? '' : `<label class="field">Username<input id="p-username" value="${esc(p.username || '')}" maxlength="20" autocapitalize="none"></label>`)
+    + (isDemo() ? '' : `<label class="field">Username<input id="p-username" value="${esc(p.username || '')}" maxlength="20" autocapitalize="none"></label>`)
     + `<label class="field">Daily star goal<select id="p-goal">${[1, 2, 3, 4, 5].map((g) => `<option value="${g}" ${goal() === g ? 'selected' : ''}>${g} ★ = ${Math.ceil(g * n / 5)} of ${n} tasks</option>`).join('')}</select></label>`
     + `<label class="field">Tracking starts<input type="date" id="p-start" value="${esc(p.startDate)}" max="${today()}"></label>`
     + `<label class="field">Year starts in<select id="p-month">${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}" ${startMonth() === i + 1 ? 'selected' : ''}>${new Date(2020, i, 1).toLocaleString(undefined, { month: 'long' })}</option>`).join('')}</select></label>`
@@ -320,9 +372,9 @@ function settingsView() {
     + `<label class="field">Reminder times (up to 3, 24-hour HH:mm, comma separated)<input id="p-times" value="${esc((r.times || []).join(', '))}" placeholder="08:00, 20:30"></label>`
     + `<p class="muted" style="font-size:12px">Time zone: ${esc(p.tz)}${p.tz !== devTz ? ` · <button class="link" id="use-device-tz">use this device (${esc(devTz)})</button>` : ''}</p>`
     + `<button class="btn" id="save-settings" style="width:100%">Save settings</button></section>`
-    + `<section class="card"><b>Reminders</b><p class="muted">${DEMO ? 'Email reminders need the Google backend. ' : 'Email reminders are sent by your Google script even when the app is closed. '}Phone notifications only fire while the app is open or running in the background; web apps cannot run timers once fully closed.</p>`
+    + `<section class="card"><b>Reminders</b><p class="muted">${isDemo() ? 'Email reminders need the Google backend. ' : 'Email reminders are sent by your Google script even when the app is closed. '}Phone notifications only fire while the app is open or running in the background; web apps cannot run timers once fully closed.</p>`
     + `<button class="btn secondary" id="notif" ${notif === 'unsupported' ? 'disabled' : ''}>${notif === 'granted' ? '🔔 Phone notifications on' : notif === 'denied' ? '🔕 Blocked in browser settings' : 'Enable phone notifications'}</button></section>`
-    + `<section class="card"><b>Account</b><p class="muted">${esc(p.identifier || 'Local demo account')}</p><div class="stack"><button class="btn secondary" id="install">Install app</button>${DEMO ? '<button class="btn secondary" id="reset-demo">Reset demo data</button>' : '<button class="btn secondary" id="logout">Log out</button>'}</div><p class="muted" style="font-size:12px">iPhone: Share → Add to Home Screen. Android: browser menu → Install app.</p></section>`;
+    + `<section class="card"><b>Account</b><p class="muted">${esc(p.identifier || 'Local demo account')}</p><div class="stack"><button class="btn secondary" id="install">Install app</button>${isDemo() ? '<button class="btn secondary" id="reset-demo">Reset demo data</button>' + (API ? '<button class="btn" id="leave-demo">Create account / sign in</button>' : '') : '<button class="btn secondary" id="logout">Log out</button>'}</div><p class="muted" style="font-size:12px">iPhone: Share → Add to Home Screen. Android: browser menu → Install app.</p></section>`;
 }
 
 function daylogView() {
@@ -330,7 +382,7 @@ function daylogView() {
   return `<section class="card" style="text-align:center"><h2 style="margin:0">Today</h2><div style="font-size:42px;font-weight:800">${d}/${n}</div><div style="font-size:24px">${starsHtml(s)}</div>`
     + `<p>Goal ${goal()}★ · 🔥 ${myStreak()} day streak</p><div class="progress"><i style="width:${d / n * 100}%"></i></div></section>`
     + `<section class="card"><b>Last 7 days</b><div class="day-strip" style="margin-top:8px">${Array.from({ length: 7 }, (_, i) => { const x = addDays(T, i - 6); return `<button class="chip ${x === ui.selected ? 'sel' : ''}" data-select="${x}"><b>${starsFor(x)}★</b>${x.slice(8)}/${x.slice(5, 7)}</button>`; }).join('')}</div></section>`
-    + panel(ui.selected) + `<p style="text-align:center"><a class="link" href="${ROOT_URL}">Open the full annual planner →</a>${DEMO || !state.token ? '' : ' · <button class="link" id="logout">Log out</button>'}</p>`;
+    + panel(ui.selected) + `<p style="text-align:center"><a class="link" href="${ROOT_URL}">Open the full annual planner →</a>${isDemo() || !state.token ? '' : ' · <button class="link" id="logout">Log out</button>'}</p>`;
 }
 
 function authView() {
@@ -342,14 +394,19 @@ function authView() {
       + `<div id="auth-error" class="err" role="alert"></div><button class="btn" style="width:100%">${ui.resetStep === 1 ? 'Send code' : 'Change password'}</button></form><button class="link" id="show-login">Back to sign in</button></section>`;
   }
   const reg = m === 'register';
-  return `<section class="card auth"><h2>Welcome to Jus Daylog</h2><p class="muted">Sign in or create an account to sync across devices.</p>`
+  return `<section class="card auth">${urlLooksWrong() ? '<p class="err" role="alert">The API_URL in config.js does not look like an Apps Script web app URL. It should start with https://script.google.com/ and end with /exec.</p>' : ''}<h2>Welcome to Jus Daylog</h2><p class="muted">Sign in or create an account to sync across devices.</p>`
     + `<div class="seg"><button class="${reg ? '' : 'on'}" id="show-login">Sign in</button><button class="${reg ? 'on' : ''}" id="show-register">Create account</button></div>`
     + `<form id="auth-form">${reg ? '<label class="field">Your name<input name="name" autocomplete="name" maxlength="60" required></label>' : ''}`
     + `<label class="field">Email or mobile number<input name="ident" required autocomplete="username" autocapitalize="none"></label>`
     + `<label class="field">Password<input name="password" type="password" minlength="6" required autocomplete="${reg ? 'new-password' : 'current-password'}"></label>`
-    + `<div id="auth-error" class="err" role="alert"></div><button class="btn" style="width:100%">${reg ? 'Create account' : 'Sign in'}</button></form>${reg ? '' : '<button class="link" id="forgot">Forgot password?</button>'}</section>`;
+    + `<div id="auth-error" class="err" role="alert"></div><button class="btn" style="width:100%">${reg ? 'Create account' : 'Sign in'}</button></form>${reg ? '' : '<button class="link" id="forgot">Forgot password?</button>'}`
+    + (CFG.GOOGLE_CLIENT_ID ? '<div class="or"><span>or</span></div><div id="g-btn" class="gbtn"></div>' : '')
+    + '<div class="or"><span>or</span></div><button class="btn secondary" style="width:100%" id="start-demo">Try the demo account</button><p class="muted" style="font-size:12px;margin:6px 0 0;text-align:center">Demo data stays on this device only.</p></section>';
 }
 
+const SETUP_HELP = '<section class="card" style="border-color:var(--amber)"><b>No server connected</b><p class="muted">Your data is saved only on this device. To enable sign-in, sync and friends, paste your Google Apps Script <b>/exec</b> URL into <code>API_URL</code> in <code>config.js</code> on GitHub, then reload this page.</p></section>';
+const DEMO_BANNER = '<section class="card" style="border-color:var(--amber)"><b>Demo account</b><p class="muted">Saved only on this device, no sync or friends.</p><button class="btn small" id="leave-demo">Create account / sign in</button></section>';
+const urlLooksWrong = () => !!API && !/^https:\/\/script\.google(usercontent)?\.com\/.+\/exec$/.test(API);
 /* ---------- render ---------- */
 // A redraw (e.g. when the friends list finishes loading) must never wipe what the person is typing.
 const fieldKey = (i) => (i.form && i.form.getAttribute('id') || '') + '/' + (i.name || i.id);
@@ -371,11 +428,11 @@ function restoreFields(root, snap) {
 }
 function render(freshInputs) {
   const root = $('#root'), tabs = $('#tabs'), y = window.scrollY, snap = freshInputs ? null : snapshotFields(root);
-  if (!DEMO && !state.token) { tabs.classList.add('hidden'); root.innerHTML = authView(); setStatus(); return; }
+  if (!isDemo() && !state.token) { tabs.classList.add('hidden'); root.innerHTML = authView(); setStatus(); initGoogle(); return; }
   tabs.classList.toggle('hidden', IS_DAYLOG);
   if (!IS_DAYLOG) tabs.innerHTML = TABS.map(([id, n]) => `<button data-tab="${id}" class="${ui.tab === id ? 'active' : ''}">${n}</button>`).join('');
   const views = { wheel: wheelView, month: monthView, tasks: tasksView, friends: friendsView, settings: settingsView, daylog: daylogView };
-  root.innerHTML = (views[ui.tab] || wheelView)();
+  root.innerHTML = (isDemo() && !IS_DAYLOG && ui.tab === 'wheel' ? (API ? DEMO_BANNER : SETUP_HELP) : '') + (views[ui.tab] || wheelView)();
   if (snap) restoreFields(root, snap);
   setStatus(); window.scrollTo(0, y);
 }
@@ -429,13 +486,13 @@ async function saveSettings() {
   if (times.some((x) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(x))) { toast('Use HH:mm for reminder times, e.g. 08:00, 20:30'); return; }
   const email = $('#p-email').value.trim();
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('Enter a valid email address'); return; }
-  const un = DEMO ? '' : $('#p-username').value.trim().toLowerCase().replace(/^@/, '');
+  const un = isDemo() ? '' : $('#p-username').value.trim().toLowerCase().replace(/^@/, '');
   if (un && !/^[a-z0-9_]{3,20}$/.test(un)) { toast('Username: 3–20 letters, numbers or underscore'); return; }
   const before = JSON.stringify(state.profile);
   Object.assign(state.profile, { name: $('#p-name').value.trim() || state.profile.name, email, goalStars: Number($('#p-goal').value) || 3,
     startDate: $('#p-start').value || state.profile.startDate, cycleStartMonth: Number($('#p-month').value) || 7,
     discoverable: $('#p-discover').checked, reminders: { enabled: $('#p-rem').checked, times } });
-  if (!DEMO && un !== (state.profile.username || '')) {            // username must be unique: ask the server now
+  if (!isDemo() && un !== (state.profile.username || '')) {            // username must be unique: ask the server now
     const r = await api('saveSettings', { settings: Object.assign(settingsPayload(), { username: un }) });
     if (!r.ok) { state.profile = JSON.parse(before); toast(r.error || 'Could not save'); render(); return; }
     state.profile.username = un;
@@ -446,10 +503,11 @@ async function saveSettings() {
 /* ---------- events ---------- */
 document.addEventListener('click', async (e) => {
   const pick = e.target.closest('[data-pick]');
-  if (pick) { select(pick.dataset.pick, true); return; }
+  if (pick) { if (Date.now() - zoom.moved < 350) return; select(pick.dataset.pick, true); return; }
   const b = e.target.closest('button'); if (!b) return;
   const ds = b.dataset;
   if (ds.tab) { go(ds.tab); return; }
+  if (ds.zoom !== undefined) { const w = $('#zoomwrap'); if (w) { const n = Number(ds.zoom); if (n === 0) { zoom.k = 1; zoomApply(); } else zoomAt(zoom.k * (n > 0 ? 1.5 : 1 / 1.5), w.clientWidth / 2, w.clientHeight / 2); } return; }
   if (ds.year) { ui.yearOffset += Number(ds.year); render(); return; }
   if (ds.shift) { ui.selected = addDays(ui.selected, Number(ds.shift)); render(); return; }
   if (ds.select) { ui.selected = ds.select; render(); return; }
@@ -466,11 +524,13 @@ document.addEventListener('click', async (e) => {
   switch (b.id) {
     case 'show-login': ui.authMode = 'login'; render(true); break;
     case 'show-register': ui.authMode = 'register'; render(true); break;
+    case 'start-demo': state = freshState(); state.token = 'demo'; persist(); applyTheme('auto', false); ui.tab = IS_DAYLOG ? 'daylog' : 'wheel'; ui.selected = today(); render(true); break;
+    case 'leave-demo': state = freshState(); persist(); ui.authMode = 'register'; applyTheme('auto', false); render(true); break;
     case 'forgot': ui.authMode = 'reset'; ui.resetStep = 1; render(true); break;
     case 'save-settings': saveSettings(); break;
     case 'use-device-tz': state.profile.tz = deviceTz(); tCache.at = 0; queue('settings'); render(); break;
-    case 'logout': { try { await sync(); await api('logout'); } catch (x) { /* ignore */ } state = freshState(); ui.friends = null; ui.matches = []; ui.tab = IS_DAYLOG ? 'daylog' : 'wheel'; persist(); applyTheme('auto', false); render(true); break; }
-    case 'reset-demo': if (confirm('Delete all demo data on this device?')) { state = freshState(); persist(); applyTheme('auto', false); ui.selected = today(); render(); } break;
+    case 'logout': { ui.authMode = 'login'; try { await sync(); await api('logout'); } catch (x) { /* ignore */ } state = freshState(); ui.friends = null; ui.matches = []; ui.tab = IS_DAYLOG ? 'daylog' : 'wheel'; persist(); applyTheme('auto', false); render(true); break; }
+    case 'reset-demo': if (confirm('Delete all demo data on this device?')) { state = freshState(); state.token = API ? 'demo' : 'demo'; persist(); applyTheme('auto', false); ui.selected = today(); render(); } break;
     case 'install': if (ui.deferredInstall) { ui.deferredInstall.prompt(); ui.deferredInstall = null; } else toast('Use your browser menu → Install app / Add to Home Screen'); break;
     case 'notif': if ('Notification' in window) { const p = await Notification.requestPermission(); toast(p === 'granted' ? 'Phone notifications enabled' : 'Notifications not allowed'); render(); } break;
     case 'invite': {
@@ -522,6 +582,32 @@ document.addEventListener('input', (e) => {
 });
 
 function setBusy(form, on) { const b = form.querySelector('button:not([type=button])'); if (b) b.disabled = on; }
+function finishLogin(r) {
+  state = freshState(); state.token = r.token; applyServerState(r.state); applyTheme(state.profile.theme, false);
+  ui.selected = today(); ui.friends = null; ui.yearOffset = 0; ui.tab = IS_DAYLOG ? 'daylog' : 'wheel'; persist();
+  if (ui.pendingInvite) { ui.addPrefill = ui.pendingInvite; ui.pendingInvite = ''; ui.tab = IS_DAYLOG ? 'daylog' : 'friends'; }
+  render(true); if (ui.tab === 'friends') loadFriends();
+}
+/* ---------- Sign in with Google (Google Identity Services) ---------- */
+let gisLoading = null;
+function initGoogle() {
+  const box = $('#g-btn'); if (!box || !CFG.GOOGLE_CLIENT_ID) return;
+  const draw = () => {
+    try {
+      google.accounts.id.initialize({ client_id: CFG.GOOGLE_CLIENT_ID, callback: onGoogle, use_fedcm_for_prompt: true });
+      google.accounts.id.renderButton(box, { theme: 'outline', size: 'large', text: 'continue_with', shape: 'pill', width: Math.min(360, box.clientWidth || 300) });
+    } catch (x) { box.innerHTML = '<p class="muted" style="font-size:12px">Google sign-in is unavailable right now.</p>'; }
+  };
+  if (window.google && google.accounts) return draw();
+  if (!gisLoading) gisLoading = new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+  gisLoading.then(draw).catch(() => { gisLoading = null; box.innerHTML = '<p class="muted" style="font-size:12px">Google sign-in needs an internet connection.</p>'; });
+}
+async function onGoogle(resp) {
+  const err = $('#auth-error');
+  const r = await api('google', { credential: resp.credential });
+  if (!r.ok) { if (err) err.textContent = r.error || 'Google sign-in failed'; else toast(r.error || 'Google sign-in failed'); return; }
+  finishLogin(r);
+}
 document.addEventListener('submit', async (e) => {
   const form = e.target, fid = form.getAttribute('id');   // (form.id can be shadowed by an input named "id")
   if (!['auth-form', 'reset-form', 'friend-form', 'username-form'].includes(fid)) return;
@@ -532,10 +618,7 @@ document.addEventListener('submit', async (e) => {
     const reg = ui.authMode === 'register';
     const r = await api(reg ? 'register' : 'login', { identifier: fd.get('ident'), password: fd.get('password'), name: fd.get('name') || '' });
     if (!r.ok) { if (err) err.textContent = r.error || 'Unable to continue'; setBusy(form, false); return; }
-    state = freshState(); state.token = r.token; applyServerState(r.state); applyTheme(state.profile.theme, false);
-    ui.selected = today(); ui.friends = null; ui.yearOffset = 0; ui.tab = IS_DAYLOG ? 'daylog' : 'wheel'; persist();
-    if (ui.pendingInvite) { ui.addPrefill = ui.pendingInvite; ui.pendingInvite = ''; ui.tab = IS_DAYLOG ? 'daylog' : 'friends'; }
-    render(true); if (ui.tab === 'friends') loadFriends();
+    finishLogin(r);
   } else if (fid === 'reset-form') {
     setBusy(form, true); if (err) err.textContent = '';
     if (ui.resetStep === 1) {
@@ -569,13 +652,13 @@ function boot() {
   if (!IS_DAYLOG && TABS.some((t) => t[0] === want)) ui.tab = want;
   if (q.has('add') || q.has('tab')) { try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ } }
   applyTheme(state.profile.theme, false);
-  if (DEMO) { state.token = 'demo'; persist(); }
-  else if (state.token && ui.pendingInvite) { ui.addPrefill = ui.pendingInvite; ui.pendingInvite = ''; if (!IS_DAYLOG) ui.tab = 'friends'; }
+  if (!API) { state.token = 'demo'; persist(); }
+  else if (state.token && state.token !== 'demo' && ui.pendingInvite) { ui.addPrefill = ui.pendingInvite; ui.pendingInvite = ''; if (!IS_DAYLOG) ui.tab = 'friends'; }
   ui.selected = today();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js').catch(() => {});
   render();
   if (ui.tab === 'friends') loadFriends();
-  if (state.token && !DEMO) { refreshFromServer(); sync(); }
+  if (state.token && !isDemo()) { refreshFromServer(); sync(); }
 }
 boot();
 window.JusDaylog = { get state() { return state; }, render, streak: myStreak };
