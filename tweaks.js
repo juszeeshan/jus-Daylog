@@ -118,7 +118,12 @@
     + '<p class="muted"><b>iPhone / iPad (Safari)</b></p><ol class="steps"><li>Open this website in <b>Safari</b>.</li><li>Tap <b>Share</b> (square with arrow), then <b>Add to Home Screen</b>.</li></ol>'
     + '<p class="muted" style="font-size:12px">When asked, tap <b>Allow</b> for notifications so reminders can reach you. On iPhone, notifications work only from the installed app.</p></section>';
 
-  function settings(root) { if (root.querySelector('#save-settings') && !root.querySelector('#k-install')) root.insertAdjacentHTML('beforeend', INSTALL); }
+  const STEPS = '<section class="card" id="k-steps"><b>Step counter</b><p class="muted">Count steps with your phone\'s motion sensor, see calories, water and weekly goals.</p><a class="btn" href="./steps/index.html" style="display:inline-block;text-decoration:none">Open Jus Steps</a></section>';
+  function settings(root) {
+    if (!root.querySelector('#save-settings')) return;
+    if (!root.querySelector('#k-steps')) root.insertAdjacentHTML('beforeend', STEPS.replace('./steps/', location.pathname.indexOf('/daylog/') >= 0 ? '../steps/' : './steps/'));
+    if (!root.querySelector('#k-install')) root.insertAdjacentHTML('beforeend', INSTALL);
+  }
 
   // New accounts: reminders and "find me" start ON. Existing accounts are never changed.
   function defaults() {
