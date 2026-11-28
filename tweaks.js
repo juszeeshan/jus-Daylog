@@ -14,7 +14,9 @@
 .wheel .cell.k-sel .hit{stroke:var(--accent);stroke-opacity:.28}
 .wheel .hubdate{font-size:10px;font-weight:700;text-anchor:middle;fill:var(--muted)}
 .k-sum{margin:2px 0 8px;font-size:14px}.k-miss{color:var(--red);font-weight:700}.k-ok{color:var(--green);font-weight:700}
-.zoomctl .k-home{font-size:19px}`;
+.zoomctl .k-home{font-size:19px}
+.tabs a.k-steps-tab{flex:1;max-width:150px;display:flex;align-items:center;justify-content:center;color:var(--muted);padding:8px 10px;border-radius:12px;font-size:12px;text-decoration:none}
+@media(max-width:560px){.tabs a.k-steps-tab{padding:8px 3px;font-size:11px}}`;
   const style = document.createElement('style'); style.textContent = CSS; document.head.appendChild(style);
   const $ = (s) => document.querySelector(s);
   const J = () => window.JusDaylog;
@@ -119,6 +121,11 @@
     + '<p class="muted" style="font-size:12px">When asked, tap <b>Allow</b> for notifications so reminders can reach you. On iPhone, notifications work only from the installed app.</p></section>';
 
   const STEPS = '<section class="card" id="k-steps"><b>Step counter</b><p class="muted">Count steps with your phone\'s motion sensor, see calories, water and weekly goals.</p><a class="btn" href="./steps/index.html" style="display:inline-block;text-decoration:none">Open Jus Steps</a></section>';
+  function stepsTab() {                                  // a "Steps" tab in the bottom bar (the bar is redrawn by app.js, so re-add it when missing)
+    const tabs = $('#tabs'); if (!tabs || tabs.classList.contains('hidden') || tabs.querySelector('.k-steps-tab')) return;
+    const a = document.createElement('a'); a.className = 'k-steps-tab'; a.textContent = 'Steps'; a.setAttribute('href', './steps/index.html');
+    const before = tabs.querySelector('[data-tab=friends]'); if (before) tabs.insertBefore(a, before); else tabs.appendChild(a);
+  }
   function settings(root) {
     if (!root.querySelector('#save-settings')) return;
     if (!root.querySelector('#k-steps')) root.insertAdjacentHTML('beforeend', STEPS.replace('./steps/', location.pathname.indexOf('/daylog/') >= 0 ? '../steps/' : './steps/'));
@@ -158,11 +165,12 @@
     try {
       const auth = root.querySelector('section.auth');
       if (auth && root.querySelector('#auth-form')) layoutAuth(auth); else promptedFor = null;
-      arrange(root); settings(root);
-    } finally { obs.observe(root, { childList: true, subtree: true }); }
+      arrange(root); settings(root); stepsTab();
+    } finally { watch(root); }
     defaults();
   }
   const obs = new MutationObserver(tidy);
+  const watch = (root) => { obs.observe(root, { childList: true, subtree: true }); const tabs = $('#tabs'); if (tabs) obs.observe(tabs, { childList: true }); };
   const start = () => { const root = $('#root'); if (!root) return; tidy(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
