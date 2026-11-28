@@ -9,7 +9,7 @@
   const weekDates = (s) => Array.from({ length: 7 }, (_, i) => addDays(weekStart(s), i));
   const LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'], NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  const DEFAULTS = { goal: 5000, waterGoal: 8, height: 170, weight: 70, age: 0, sex: 'm', units: 'km', sens: 'normal', keepAwake: true };
+  const DEFAULTS = { goal: 5000, waterGoal: 8, height: 170, weight: 70, age: 0, sex: 'm', units: 'km', sens: 'normal', keepAwake: true, source: 'max' };
   const num = (x, d) => (Number.isFinite(Number(x)) && Number(x) > 0 ? Number(x) : d);
 
   const strideM = (p) => num(p.height, 170) * 0.415 / 100;

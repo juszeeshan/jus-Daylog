@@ -12,13 +12,71 @@
   let S;
   function load() {
     let o = null; try { o = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { /* ignore */ }
-    S = { settings: Object.assign({}, C.DEFAULTS, (o && o.settings) || {}), days: (o && o.days) || {}, paused: !!(o && o.paused) };
+    S = { settings: Object.assign({}, C.DEFAULTS, (o && o.settings) || {}), days: (o && o.days) || {}, paused: !!(o && o.paused), sent: (o && o.sent) || {}, devices: (o && o.devices) || [], id: (o && o.id) || ('p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36)) };
+    try { const jd = JSON.parse(localStorage.getItem('jus-daylog-v1') || 'null'); S.name = (jd && jd.profile && jd.profile.name) || 'My phone'; } catch (e) { S.name = 'My phone'; }
+    recomputeAll();
     const old = C.addDays(todayISO(), -8);                          // keep per-minute detail for a week only; older days keep just the totals
     Object.keys(S.days).forEach((d) => { const x = S.days[d]; if (d < old && x.mins) { x.am = (x.am || 0) + C.activeMinutes(x.mins); delete x.mins; } });
   }
+  /* The number shown in the ring for a day = day.steps, worked out from day.src (phone + each watch) by the chosen rule. */
+  function recompute(d) {
+    d.src = d.src || { phone: d.steps || 0 };
+    const mode = S.settings.source || 'max', vals = Object.keys(d.src).map((k) => d.src[k] || 0);
+    d.steps = mode === 'phone' ? (d.src.phone || 0) : mode === 'max' ? Math.max(0, ...vals) : (d.src[mode] || 0);
+  }
+  function recomputeAll() { Object.keys(S.days).forEach((x) => recompute(S.days[x])); }
   let saveTimer = null;
-  function save(now) { clearTimeout(saveTimer); const go = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage full or blocked */ } }; if (now) go(); else saveTimer = setTimeout(go, 1500); }
-  const day = (d) => (S.days[d] = S.days[d] || { steps: 0, mins: {}, am: 0, mood: 0, note: '', water: 0 });
+  function save(now) { clearTimeout(saveTimer); const go = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage full or blocked */ } }; if (now) go(); else saveTimer = setTimeout(go, 1500); scheduleSync(now); }
+
+  /* ---------- sync to the signed-in Jus Daylog account (and its Google Sheet "Steps" tab) ---------- */
+  const API = (window.APP_CONFIG && window.APP_CONFIG.API_URL) || '';
+  const cloud = { status: API ? 'idle' : 'off', last: 0, busy: false, timer: null };
+  const tokenOf = () => { try { const j = JSON.parse(localStorage.getItem('jus-daylog-v1') || 'null'); return j && j.token && j.token !== 'demo' ? j.token : ''; } catch (e) { return ''; } };
+  const tzOf = () => { try { const j = JSON.parse(localStorage.getItem('jus-daylog-v1') || 'null'); return (j && j.profile && j.profile.tz) || Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return 'UTC'; } };
+  function srcLabel(k) { return k === 'phone' ? 'Phone' : k === 'cloud' ? 'Account' : ((S.devices.find((z) => z.id === k) || { name: k }).name); }
+  function dayPayload(x) {
+    const d = S.days[x], P = S.settings;
+    return { steps: d.steps, goal: P.goal, km: Math.round(C.distanceKm(d.steps, P) * 100) / 100, kcal: Math.round(C.walkKcal(d.steps, P)), active: C.activeMinutes(d.mins) + (d.am || 0), water: d.water || 0, mood: d.mood || 0, note: d.note || '',
+      sources: Object.keys(d.src || {}).filter((k) => d.src[k]).map((k) => srcLabel(k) + ' ' + d.src[k]).join('; ') };
+  }
+  const changedDays = () => { const min = C.addDays(todayISO(), -120); return Object.keys(S.days).filter((x) => x >= min && x <= C.addDays(todayISO(), 1) && S.days[x].steps >= 0 && (S.days[x].steps > 0 || S.sent[x]) && JSON.stringify(dayPayload(x)) !== S.sent[x]).sort().reverse(); };
+  async function post(body) { const r = await fetch(API, { method: 'POST', body: JSON.stringify(Object.assign({ token: tokenOf(), tz: tzOf() }, body)), keepalive: true }); return r.json(); }
+  async function pushNow() {
+    if (!API || !tokenOf() || cloud.busy) return; cloud.busy = true;
+    try {
+      for (let round = 0; round < 8; round++) {
+        const dates = changedDays().slice(0, 14); if (!dates.length) break;
+        const days = {}, snap = {}; dates.forEach((x) => { days[x] = dayPayload(x); snap[x] = JSON.stringify(days[x]); });
+        const j = await post({ action: 'saveSteps', days });
+        if (!j.ok) { cloud.status = j.code === 'auth' ? 'auth' : 'error'; cloud.msg = j.error || ''; break; }
+        Object.assign(S.sent, snap); cloud.status = 'ok'; cloud.last = Date.now(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ }
+      }
+    } catch (e) { cloud.status = navigator.onLine ? 'error' : 'offline'; }
+    cloud.busy = false; if (D) drawSoon();
+  }
+  function scheduleSync(now) { if (!API) return; clearTimeout(cloud.timer); cloud.timer = setTimeout(pushNow, now ? 1200 : 15000); }
+  async function pullCloud() {                                              // a new phone gets the account's steps back
+    if (!API || !tokenOf()) return;
+    try {
+      const j = await post({ action: 'getSteps' }); if (!j.ok) { cloud.status = j.code === 'auth' ? 'auth' : 'error'; return; }
+      Object.keys(j.days || {}).forEach((x) => { const r = j.days[x], d = S.days[x] || null; if (!d && !(r.steps > 0 || r.water || r.note)) return; const dd = day(x); dd.src = dd.src || { phone: dd.steps || 0 }; if (r.steps > (dd.src.cloud || 0)) dd.src.cloud = r.steps; if (!dd.water && r.water) dd.water = r.water; if (!dd.mood && r.mood) dd.mood = r.mood; if (!dd.note && r.note) dd.note = r.note; recompute(dd); });
+      cloud.status = 'ok'; cloud.last = Date.now(); save(true);
+    } catch (e) { cloud.status = navigator.onLine ? 'error' : 'offline'; }
+    drawSoon();
+  }
+  function cloudCard() {
+    const t = tokenOf(), st = cloud.status, ago = cloud.last ? new Date(cloud.last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    let line;
+    if (!API) line = '<span class="muted small">Not set up: the site has no server address yet.</span>';
+    else if (!t) line = '<span class="pill warn">Not signed in</span><p class="muted small">Sign in to Jus Daylog to save your steps to your account and your Google Sheet, and to get them back on a new phone.</p><a class="btn small" href="../index.html" style="text-decoration:none;display:inline-block">Open Jus Daylog</a>';
+    else if (st === 'auth') line = '<span class="pill warn">Session expired</span><p class="muted small">Open Jus Daylog and sign in again.</p><a class="btn small" href="../index.html" style="text-decoration:none;display:inline-block">Open Jus Daylog</a>';
+    else if (st === 'ok') line = `<span class="pill">● Synced</span> <span class="muted small">${ago}${changedDays().length ? ' · ' + changedDays().length + ' day(s) waiting' : ''}</span>`;
+    else if (st === 'offline') line = '<span class="pill warn">Offline</span> <span class="muted small">will sync when you are back online</span>';
+    else if (st === 'error') line = `<span class="pill warn">Could not sync</span> <span class="muted small">${esc(cloud.msg || 'Try again in a moment.')}</span>`;
+    else line = '<span class="pill warn">Waiting to sync…</span>';
+    return `<section class="card"><h2>Account sync</h2>${line}${t && API ? '<div style="margin-top:10px"><button class="btn small ghost" data-a="syncnow">Sync now</button></div>' : ''}</section>`;
+  }
+  const day = (d) => (S.days[d] = S.days[d] || { steps: 0, src: { phone: 0 }, mins: {}, am: 0, mood: 0, note: '', water: 0 });
   const peek = (d) => S.days[d] || { steps: 0, mins: {}, am: 0, mood: 0, note: '', water: 0 };
 
   /* ---------- UI state ---------- */
@@ -31,7 +89,7 @@
   function addSteps(n) {
     if (!(n > 0)) return;
     const t = todayISO(), d = day(t), before = d.steps, goal = S.settings.goal;
-    d.steps += n; const m = nowMin(); d.mins[m] = (d.mins[m] || 0) + n;
+    d.src = d.src || { phone: d.steps || 0 }; d.src.phone = (d.src.phone || 0) + n; recompute(d); const m = nowMin(); d.mins[m] = (d.mins[m] || 0) + n;
     if (before < goal && d.steps >= goal) { toast('Daily goal reached! 🎉'); try { navigator.vibrate && navigator.vibrate([120, 60, 120]); } catch (e) { /* ignore */ } }
     save(); drawSoon();
   }
@@ -52,13 +110,14 @@
   async function keepAwake() {
     try { if (S.settings.keepAwake && ui.status === 'counting' && 'wakeLock' in navigator && !wake && document.visibilityState === 'visible') { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } } catch (e) { wake = null; }
   }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { det.reset(); keepAwake(); draw(); } else save(true); });
-  window.addEventListener('pagehide', () => save(true));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { det.reset(); keepAwake(); draw(); } else { save(true); pushNow(); } });
+  window.addEventListener('pagehide', () => { save(true); pushNow(); });
 
   /* ---------- drawing ---------- */
   let drawTimer = null; const drawSoon = () => { if (!drawTimer) drawTimer = setTimeout(() => { drawTimer = null; draw(); }, 900); };
   const dist = (km) => (S.settings.units === 'mi' ? (km * 0.621371).toFixed(2) + ' mi' : km.toFixed(2) + ' km');
-  const TABS = [['today', '🏠', 'Today'], ['stats', '👥', 'Stats'], ['goals', '🎯', 'Goals'], ['report', '📊', 'Report'], ['settings', '⚙️', 'Settings']];
+  const TABS = [['today', '🏠', 'Today'], ['stats', '📈', 'Stats'], ['goals', '🎯', 'Goals'], ['devices', '⌚', 'Devices'], ['report', '📊', 'Report'], ['settings', '⚙️', 'Settings']];
+  let D = null;
   function ring(pct, r, w) { const c = 2 * Math.PI * r; return `<circle cx="100" cy="100" r="${r}" fill="none" stroke="var(--card2)" stroke-width="${w}"/><circle cx="100" cy="100" r="${r}" fill="none" stroke="var(--accent)" stroke-width="${w}" stroke-linecap="round" stroke-dasharray="${(c * Math.min(1, pct)).toFixed(1)} ${c.toFixed(1)}"/>`; }
 
   function statusLine() {
@@ -144,7 +203,7 @@
   }
   function settingsView() {
     const P = S.settings, mode = (() => { try { return localStorage.getItem('jd-steps-mode') || 'auto'; } catch (e) { return 'auto'; } })();
-    return `<h1>Settings</h1><section class="card"><h2>Step counter</h2><div class="row between"><div>${statusLine() || '<span class="muted">Not started</span>'}</div>${ui.status === 'counting' ? `<button class="btn small ghost" data-a="pause">${S.paused ? 'Resume' : 'Pause'}</button>` : '<button class="btn small" data-a="start">Start</button>'}</div>
+    return `<h1>Settings</h1>${cloudCard()}<section class="card"><h2>Step counter</h2><div class="row between"><div>${statusLine() || '<span class="muted">Not started</span>'}</div>${ui.status === 'counting' ? `<button class="btn small ghost" data-a="pause">${S.paused ? 'Resume' : 'Pause'}</button>` : '<button class="btn small" data-a="start">Start</button>'}</div>
       <label style="margin-top:12px">Sensitivity<select id="s-sens"><option value="low" ${P.sens === 'low' ? 'selected' : ''}>Low (fewer false steps)</option><option value="normal" ${P.sens === 'normal' ? 'selected' : ''}>Normal</option><option value="high" ${P.sens === 'high' ? 'selected' : ''}>High (gentle walkers)</option></select></label>
       <label class="row" style="margin-top:12px"><input id="s-awake" type="checkbox" style="width:auto" ${P.keepAwake ? 'checked' : ''}> Keep the screen on while counting</label>
       <label style="margin-top:12px">Appearance<select id="s-mode">${['auto', 'dark', 'light', 'amoled'].map((m) => `<option value="${m}" ${mode === m ? 'selected' : ''}>${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}</select></label></section>
@@ -157,7 +216,8 @@
   function draw() {
     if (drawTimer) { clearTimeout(drawTimer); drawTimer = null; }
     const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && $('#app').contains(a)) return;   // never wipe what is being typed
-    const y = window.scrollY, views = { today: todayView, stats: statsView, goals: goalsView, report: reportView, settings: settingsView };
+    if (D && D.holdDraw()) return;                                               // camera is open: do not rebuild the page
+    const y = window.scrollY, views = { today: todayView, stats: statsView, goals: goalsView, devices: () => D.view(), report: reportView, settings: settingsView };
     $('#app').innerHTML = views[ui.tab]();
     $('#nav').innerHTML = TABS.map((t) => `<button class="${ui.tab === t[0] ? 'on' : ''}" data-a="tab" data-v="${t[0]}"><span>${t[1]}</span>${t[2]}</button>`).join('');
     window.scrollTo(0, y);
@@ -173,6 +233,7 @@
   }
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a, v = b.dataset.v, T = todayISO();
+    if (a.indexOf('dev-') === 0) { D.act(a, b); return; }
     if (a === 'tab') { ui.tab = v; ui.sel = ui.tab === 'today' ? ui.sel : ui.sel; window.scrollTo(0, 0); }
     else if (a === 'start') { startCounting(); return; }
     else if (a === 'pause') { S.paused = !S.paused; save(true); toast(S.paused ? 'Paused' : 'Counting'); }
@@ -185,10 +246,11 @@
       P.height = clampInt(val('p-height'), 100, 230, P.height); P.weight = Math.min(250, Math.max(30, Number(val('p-weight')) || P.weight)); P.age = val('p-age') ? clampInt(val('p-age'), 5, 110, 0) : 0;
       P.sex = val('p-sex') || 'm'; P.units = val('p-units') || 'km'; save(true); toast('Saved');
     }
-    else if (a === 'addManual') { const n = clampInt(val('add-n'), 1, 100000, 0); if (!n) { toast('Enter a number of steps'); return; } day(T).steps += n; save(true); toast('Added ' + fmt(n) + ' steps'); }
-    else if (a === 'setTotal') { const n = clampInt(val('set-n'), 0, 200000, -1); if (n < 0) { toast('Enter a number'); return; } day(T).steps = n; save(true); toast('Today set to ' + fmt(n)); }
+    else if (a === 'addManual') { const n = clampInt(val('add-n'), 1, 100000, 0); if (!n) { toast('Enter a number of steps'); return; } { const d = day(T); d.src = d.src || { phone: d.steps || 0 }; d.src.phone = (d.src.phone || 0) + n; recompute(d); } save(true); toast('Added ' + fmt(n) + ' steps'); }
+    else if (a === 'setTotal') { const n = clampInt(val('set-n'), 0, 200000, -1); if (n < 0) { toast('Enter a number'); return; } { const d = day(T); d.src = d.src || {}; d.src.phone = n; recompute(d); } save(true); toast('Today set to ' + fmt(n)); }
     else if (a === 'clearToday') { if (confirm('Clear today’s steps, water and notes?')) { delete S.days[T]; save(true); } }
     else if (a === 'clearAll') { if (confirm('Delete ALL step data on this device?')) { S.days = {}; save(true); toast('Deleted'); } }
+    else if (a === 'syncnow') { pushNow().then(pullCloud); toast('Syncing…'); return; }
     else if (a === 'csv') { csv(); return; }
     else if (a === 'share') { const t = reportText(); if (navigator.share) navigator.share({ title: 'Jus Steps', text: t }).catch(() => {}); else if (navigator.clipboard) navigator.clipboard.writeText(t).then(() => toast('Copied')); return; }
     draw();
@@ -196,6 +258,7 @@
   document.addEventListener('change', (e) => {
     const id = e.target.id;
     if (id === 'note') { day(ui.sel).note = e.target.value.slice(0, 140); save(true); }
+    else if (id === 'dev-source') { S.settings.source = e.target.value; recomputeAll(); save(true); draw(); }
     else if (id === 's-sens') { S.settings.sens = e.target.value; det.setSens(S.settings.sens); save(true); }
     else if (id === 's-awake') { S.settings.keepAwake = e.target.checked; if (!e.target.checked && wake) { wake.release(); wake = null; } else keepAwake(); save(true); }
     else if (id === 's-mode') { try { if (e.target.value === 'auto') localStorage.removeItem('jd-steps-mode'); else localStorage.setItem('jd-steps-mode', e.target.value); } catch (x) { /* ignore */ } const m = e.target.value === 'auto' ? (({ amoled: 'amoled' })[localStorage.getItem('jd-theme')] || 'dark') : e.target.value; document.documentElement.setAttribute('data-mode', m); }
@@ -203,9 +266,11 @@
 
   /* ---------- start ---------- */
   load(); det.setSens(S.settings.sens);
+  D = StepsDevices.create({ C, S: () => S, save, draw, drawSoon, toast, day, peek, recompute, recomputeAll, todayISO });
   try { if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('../sw.js', { scope: '../' }).catch(() => {}); } catch (e) { /* ignore */ }
   draw();
+  pullCloud().then(() => pushNow());
   try { if (localStorage.getItem('jd-steps-on') === '1' && !(typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function')) startCounting(); } catch (e) { /* ignore */ }   // Android resumes by itself; iPhone needs a tap
   setInterval(() => { if (document.visibilityState === 'visible') { const t = todayISO(); if (ui.sel !== t && ui.lastToday && ui.lastToday !== t && ui.sel === ui.lastToday) ui.sel = t; ui.lastToday = t; draw(); } }, 60000);
-  window.StepsApp = { feed, addSteps, draw, state: () => S, ui };
+  window.StepsApp = { feed, addSteps, draw, state: () => S, ui, devices: () => D };
 })();
